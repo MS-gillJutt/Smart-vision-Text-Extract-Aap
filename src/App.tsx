@@ -24,6 +24,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import * as mammoth from 'mammoth';
 import JSZip from 'jszip';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
 import { processFileWithAI, askQuestionAboutContent, OCRResult } from './lib/gemini';
 
 // Session Types
@@ -41,6 +42,7 @@ interface Session {
 // Speech Recognition Types
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList;
+  resultIndex: number;
 }
 
 interface SpeechRecognitionResultList {
@@ -103,6 +105,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const finalTranscriptRef = useRef<string>('');
 
   // Load history from localStorage
   useEffect(() => {
@@ -190,13 +193,22 @@ export default function App() {
       recognition.lang = 'en-US';
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
-        let transcript = '';
-        for (let i = 0; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        setCurrentQuestion(transcript);
+        let interimTranscript = '';
         
-        // If it's a final result, we can still check for commands
+        // Use resultIndex to only process new results
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscriptRef.current += transcript + ' ';
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+        
+        const fullTranscript = (finalTranscriptRef.current + interimTranscript).trim();
+        setCurrentQuestion(fullTranscript);
+        
+        // Command detection on final results
         if (event.results[event.results.length - 1].isFinal) {
           const lastTranscript = event.results[event.results.length - 1][0].transcript.toLowerCase();
           if (lastTranscript.includes("reset") || lastTranscript.includes("clear")) {
@@ -208,15 +220,14 @@ export default function App() {
       recognition.onerror = (event: any) => {
         console.error('Speech recognition error', event.error);
         setIsListening(false);
-        setVoiceFeedback("Error listening. Try again.");
-        setTimeout(() => setVoiceFeedback(null), 3000);
+        setVoiceFeedback(null);
       };
 
       recognition.onend = () => {
         setIsListening(false);
+        setVoiceFeedback(null);
       };
 
-      recognition.ref = recognition;
       recognitionRef.current = recognition;
     }
   }, []);
@@ -242,15 +253,16 @@ export default function App() {
     if (isListening) {
       recognitionRef.current?.stop();
       setIsListening(false);
+      setVoiceFeedback(null);
     } else {
       if (recognitionRef.current) {
         try {
+          finalTranscriptRef.current = ''; // Reset on start
           recognitionRef.current.start();
           setIsListening(true);
-          setVoiceFeedback("Listening for commands...");
+          setVoiceFeedback("Listening...");
         } catch (e) {
           console.error("Recognition already started", e);
-          // Force reset state if it got out of sync
           setIsListening(true);
         }
       } else {
@@ -452,20 +464,56 @@ export default function App() {
     }
   };
 
-  const handleDownloadAnswer = (qa: { question: string; answer: string }) => {
+  const handleDownloadAnswer = async (qa: { question: string; answer: string }) => {
     try {
-      const content = `Question: ${qa.question}\n\nAnswer:\n${qa.answer}`;
-      const blob = new Blob([content], { type: 'text/plain' });
+      const doc = new Document({
+        sections: [{
+          properties: {},
+          children: [
+            new Paragraph({
+              text: "Smart Vision - Q&A Answer",
+              heading: HeadingLevel.HEADING_1,
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: "Question: ",
+                  bold: true,
+                }),
+                new TextRun(qa.question),
+              ],
+            }),
+            new Paragraph({
+              text: "",
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: "Answer:",
+                  bold: true,
+                }),
+              ],
+            }),
+            ...qa.answer.split('\n').map(line => new Paragraph({
+              children: [new TextRun(line)],
+              spacing: { before: 100 },
+            })),
+          ],
+        }],
+      });
+
+      const blob = await Packer.toBlob(doc);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `answer-${new Date().getTime()}.txt`;
+      a.download = `answer-${new Date().getTime()}.docx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err) {
-      setError("Failed to download the answer.");
+      console.error("Docx generation error:", err);
+      setError("Failed to download the answer in Word format.");
     }
   };
 
@@ -949,36 +997,53 @@ export default function App() {
                   <p className="text-sm text-[#141414]/60">Engage in a Q&A session to find specific information.</p>
                 </div>
 
-                <form onSubmit={handleAskQuestion} className="relative max-w-2xl mx-auto flex gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type="text"
-                      value={currentQuestion}
-                      onChange={(e) => setCurrentQuestion(e.target.value)}
-                      placeholder="e.g., What is in the first chapter?"
-                      className="w-full bg-white border border-[#141414]/10 rounded-2xl px-6 py-4 pr-12 focus:outline-none focus:border-[#141414] transition-colors shadow-sm"
-                      disabled={isAsking}
-                    />
+                <form onSubmit={handleAskQuestion} className="relative max-w-2xl mx-auto flex flex-col gap-3">
+                  <div className="relative flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        value={currentQuestion}
+                        onChange={(e) => setCurrentQuestion(e.target.value)}
+                        placeholder="e.g., What is in the first chapter?"
+                        className="w-full bg-white border border-[#141414]/10 rounded-2xl px-6 py-4 pr-12 focus:outline-none focus:border-[#141414] transition-colors shadow-sm"
+                        disabled={isAsking}
+                      />
+                      <button
+                        type="button"
+                        onClick={toggleListening}
+                        className={`absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl transition-all ${
+                          isListening 
+                            ? 'bg-red-500 text-white shadow-lg shadow-red-200 animate-pulse' 
+                            : 'text-[#141414]/40 hover:text-[#141414] hover:bg-[#141414]/5'
+                        }`}
+                        title={isListening ? "Stop Listening" : "Start Voice Input"}
+                      >
+                        {isListening ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+                      </button>
+                    </div>
                     <button
-                      type="button"
-                      onClick={toggleListening}
-                      className={`absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl transition-all ${
-                        isListening 
-                          ? 'bg-red-500 text-white animate-pulse' 
-                          : 'text-[#141414]/40 hover:text-[#141414] hover:bg-[#141414]/5'
-                      }`}
-                      title={isListening ? "Stop Listening" : "Voice Input"}
+                      type="submit"
+                      disabled={isAsking || !currentQuestion.trim()}
+                      className="bg-[#141414] text-white px-8 py-4 rounded-2xl font-bold text-sm tracking-widest uppercase hover:bg-[#262626] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm flex items-center gap-2"
                     >
-                      {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                      {isAsking ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanText className="w-4 h-4" />}
+                      <span>Ask</span>
                     </button>
                   </div>
-                  <button
-                    type="submit"
-                    disabled={isAsking || !currentQuestion.trim()}
-                    className="px-8 bg-[#141414] text-white rounded-2xl font-bold hover:bg-[#262626] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center shadow-sm"
-                  >
-                    {isAsking ? <Loader2 className="w-5 h-5 animate-spin" /> : "Ask"}
-                  </button>
+                  
+                  <AnimatePresence>
+                    {voiceFeedback && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        className="flex items-center gap-2 px-4 py-1.5 bg-emerald-50 text-emerald-700 rounded-full w-fit mx-auto border border-emerald-100"
+                      >
+                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider">{voiceFeedback}</span>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </form>
 
                 <div className="space-y-4 max-w-2xl mx-auto">
@@ -1021,22 +1086,7 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      {/* Voice Feedback Overlay */}
-      <AnimatePresence>
-        {voiceFeedback && (
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 50 }}
-            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
-          >
-            <div className="bg-[#141414] text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-white/10">
-              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-              <p className="text-sm font-medium tracking-tight">{voiceFeedback}</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Voice Feedback Overlay Removed - Moved to Input Area */}
 
       {/* Floating Voice Button Removed - Integrated into Chat */}
 
