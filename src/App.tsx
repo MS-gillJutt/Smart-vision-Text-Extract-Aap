@@ -22,7 +22,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import mammoth from 'mammoth';
+import * as mammoth from 'mammoth';
 import JSZip from 'jszip';
 import { processFileWithAI, askQuestionAboutContent, OCRResult } from './lib/gemini';
 
@@ -281,6 +281,8 @@ export default function App() {
     const file = e.target.files?.[0];
     if (file) {
       processFile(file);
+      // Clear the input so the same file can be uploaded again if needed
+      e.target.value = '';
     }
   };
 
@@ -367,11 +369,18 @@ export default function App() {
         aiResult = await processFileWithAI(base64, file.type);
       } else if (isDocx) {
         const arrayBuffer = await file.arrayBuffer();
-        const { value: text } = await mammoth.extractRawText({ arrayBuffer });
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        const text = result.value;
+        if (!text.trim()) {
+          throw new Error("The Word document appears to be empty or contains no readable text.");
+        }
         setFileContent({ text });
         aiResult = await processFileWithAI({ text }, file.type);
       } else if (isPptx) {
         const text = await extractTextFromPptx(file);
+        if (!text.trim() || text === "No readable text found in PowerPoint slides.") {
+          throw new Error("The PowerPoint file appears to be empty or contains no readable text.");
+        }
         setFileContent({ text });
         aiResult = await processFileWithAI({ text }, file.type);
       } else {
@@ -555,7 +564,7 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {image && (
+            {(image || results) && (
               <button 
                 onClick={startNewSession}
                 className="text-sm font-bold uppercase tracking-widest flex items-center gap-2 px-4 py-2 bg-[#141414] text-white rounded-xl hover:bg-[#262626] transition-all shadow-sm"
@@ -564,7 +573,7 @@ export default function App() {
                 New Entry
               </button>
             )}
-            {image && (
+            {(image || results) && (
               <button 
                 onClick={reset}
                 className="text-sm font-medium opacity-50 hover:opacity-100 transition-opacity flex items-center gap-1"
@@ -621,7 +630,7 @@ export default function App() {
         )}
 
         <AnimatePresence mode="wait">
-          {!image && !loading ? (
+          {!image && !results && !loading && !error ? (
             <motion.div
               key="upload"
               initial={{ opacity: 0, y: 20 }}
