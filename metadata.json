@@ -1,5 +1,5 @@
 {
   "name": "Smart Vision",
-  "description": "Smart Vision: Your intelligent companion for extracting, summarizing, and translating text from images. Instantly turn photos into editable text with AI-powered precision and multi-lingual support.",
-  "requestFramePermissions": ["camera"]
+  "description": "Smart Vision: Your intelligent companion for extracting and summarizing text from images, PDFs, Word documents, and PowerPoint slides. Instantly turn any file into structured insights with AI-powered precision and multi-lingual support.",
+  "requestFramePermissions": ["camera", "microphone"]
 }

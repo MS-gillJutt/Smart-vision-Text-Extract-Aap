@@ -17,6 +17,24 @@
   .dir-rtl {
     direction: rtl;
   }
+
+  /* Basic Markdown Styling */
+  .prose h1, .prose h2, .prose h3 {
+    @apply font-bold text-[#141414] mt-6 mb-4;
+  }
+  .prose h3 { @apply text-lg; }
+  .prose p {
+    @apply mb-4 last:mb-0;
+  }
+  .prose ul, .prose ol {
+    @apply mb-4 ml-4 list-disc;
+  }
+  .prose li {
+    @apply mb-1;
+  }
+  .prose strong {
+    @apply font-bold text-[#141414];
+  }
 }
 
 @layer components {
