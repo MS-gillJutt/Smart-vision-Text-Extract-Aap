@@ -98,6 +98,7 @@ export default function App() {
   const [fileName, setFileName] = useState<string>('');
   const [history, setHistory] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [homeLangIndex, setHomeLangIndex] = useState(0);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -135,6 +136,47 @@ export default function App() {
         return prev;
       });
     }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const homeLanguages = [
+    {
+      lang: 'en',
+      text: "Smart Vision uses advanced AI to extract text, summarize documents, and provide meaningful insights in multiple languages.",
+      dir: 'ltr'
+    },
+    {
+      lang: 'ur',
+      text: "اسمارٹ ویژن جدید مصنوعی ذہانت کا استعمال کرتے ہوئے متن نکالتا ہے، دستاویزات کا خلاصہ کرتا ہے اور متعدد زبانوں میں بامعنی معلومات فراہم کرتا ہے۔",
+      dir: 'rtl'
+    },
+    {
+      lang: 'hi',
+      text: "स्मार्ट विजन उन्नत एआई का उपयोग करके टेक्स्ट निकालता है, दस्तावेजों का सारांश देता है और कई भाषाओं में सार्थक जानकारी प्रदान करता है।",
+      dir: 'ltr'
+    },
+    {
+      lang: 'es',
+      text: "Smart Vision utiliza IA avanzada para extraer texto, resumir documentos y proporcionar información significativa en varios idiomas.",
+      dir: 'ltr'
+    },
+    {
+      lang: 'fr',
+      text: "Smart Vision utilise l'IA avancée pour extraire du texte, résumer des documents et fournir des informations pertinentes dans plusieurs langues.",
+      dir: 'ltr'
+    },
+    {
+      lang: 'ar',
+      text: "يستخدم سمارت فيجن الذكاء الاصطناعي المتقدم لاستخراج النصوص وتلخيص المستندات وتقديم رؤى مفيدة بلغات متعددة.",
+      dir: 'rtl'
+    }
+  ];
+
+  // Cycle home screen languages every 5 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setHomeLangIndex(prev => (prev + 1) % homeLanguages.length);
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -592,9 +634,21 @@ export default function App() {
                   Smart Intelligence for <br />
                   <span className="italic serif text-[#141414]/40">Your Vision.</span>
                 </h2>
-                <p className="text-[#141414]/60 max-w-md mx-auto">
-                  Instantly extract text, summarize context, and translate into Urdu with AI-powered precision.
-                </p>
+                <div className="h-20 md:h-16 relative">
+                  <AnimatePresence mode="wait">
+                    <motion.p
+                      key={homeLangIndex}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className={`text-[#141414]/60 max-w-md mx-auto absolute inset-0 ${
+                        homeLanguages[homeLangIndex].dir === 'rtl' ? 'dir-rtl serif font-bold' : ''
+                      }`}
+                    >
+                      {homeLanguages[homeLangIndex].text}
+                    </motion.p>
+                  </AnimatePresence>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
